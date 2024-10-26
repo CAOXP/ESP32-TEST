@@ -1,0 +1,303 @@
+#include <Arduino.h>
+#include <SoftwareSerial.h>
+#include <Servo.h>
+#include <Ds1302.h>
+#include "GD5800_Serial.h"
+#include "hmi.h"
+
+
+#define RTCPIN_ENA    2
+#define RTCPIN_CLK    4
+#define RTCPIN_DAT    3
+#define YELLOLIGHT_IO 5   //yellolight IO:5
+#define WRITELIGHT_IO 6   //writelight IO:6
+#define FOGIO         7   //雾气 IO:7
+#define ANIONIO       8   //负离子 IO:8
+#define SERVO1IO      9   //servo1 IO:9
+#define SERVO2IO      10  //servo2 IO:10
+#define XFSRXIO       12  //科大讯飞语音合成RX IO:11
+#define XFSTXIO       11  //科大讯飞语音合成TX IO:11
+#define FANIO         12  //风扇 IO:12
+#define BUTTON1IO     A5  //按钮1 IO:13
+#define BUTTON2IO     A0  //按钮2 IO:A0
+#define MP3TXIO       A1  //MP3TX IO:A1
+#define MP3RXIO       A2  //MP3RX IO:A2
+#define SCREENTXIO        A3  //屏幕TX IO:A3
+#define SCREENRXIO        A4  //屏幕RX IO:A4
+
+#define SERVO_OPEN 180
+#define SERVO1_CLOSE 78
+#define SERVO2_CLOSE 80
+
+
+
+
+Ds1302 rtc(RTCPIN_ENA, RTCPIN_CLK, RTCPIN_DAT);
+Servo servo1; 
+Servo servo2; 
+GD5800_Serial mp345(MP3RXIO, MP3TXIO);                         // 初始化MP3
+SoftwareSerial xfsSerial(XFSRXIO, XFSTXIO); // RX, TX
+//=======================================================================
+void MP3setup() {
+  mp345.begin(9600);
+  mp345.setVolume(50);                               // 设置音量为50
+  mp345.setLoopMode(MP3_LOOP_ALL);      // 设置循环模式为全部循环
+  mp345.setEqualizer(MP3_EQ_NORMAL);    // 设置音效为普通
+}
+//=======================================================================
+uint8_t XFSwrite(uint8_t *dat,uint16_t len)
+{
+  uint16_t i=0;
+  for(i=0;i<len;i++){
+    xfsSerial.write(dat[i]);
+  }
+  return 0;
+}
+void XFSplay(uint8_t *CQdata)
+{
+  uint8_t Data[100];
+  uint16_t len;
+  uint16_t i=0;
+  len = strlen(CQdata);
+  Data[0] = 0xFD ;
+  Data[1] = 0x00 ;
+  Data[2] = len+2 ;
+  Data[3] = 0x01 ;
+  Data[4] = 1 ;
+  memcpy(&Data[5],CQdata,len);
+  XFSwrite(Data,5+len);
+}
+//=======================================================================
+
+void light(u8 pwm,u8 yw)
+{
+  //yellolight IO:5
+  //writelight IO:6
+  if (yw == 3)
+  {
+    analogWrite(YELLOLIGHT_IO, pwm);
+    analogWrite(WRITELIGHT_IO, pwm);
+  }
+  else if (yw == 2)
+  {
+    analogWrite(YELLOLIGHT_IO, pwm);
+  }
+  else if(yw == 1)
+  {
+    analogWrite(WRITELIGHT_IO, pwm);
+  }
+  
+}
+void fog(u8 open){
+  //雾气 IO:7
+  pinMode(FOGIO, OUTPUT);
+  if(open){
+    digitalWrite(FOGIO, HIGH);
+  }
+  else{
+    digitalWrite(FOGIO, LOW);
+  }
+}
+void anion(u8 open){
+  //负离子 IO:8
+  if(open){
+    digitalWrite(ANIONIO, HIGH);
+  }
+  else{
+    digitalWrite(ANIONIO, LOW);
+  }
+}
+void smell(u8 type)
+{
+  //servo1 IO:9
+  //servo2 IO:10
+  pinMode(FANIO, OUTPUT);
+  if (type == 3)
+  {
+    servo1.write(SERVO_OPEN);  
+    servo2.write(SERVO_OPEN); 
+    delay(15); 
+    digitalWrite(FANIO, HIGH);
+  }
+  else if (type == 2)
+  {
+    servo1.write(SERVO_OPEN);  
+    servo2.write(SERVO2_CLOSE); 
+    delay(15); 
+    digitalWrite(FANIO, HIGH);
+  }
+  else if(type == 1)
+  {
+    servo1.write(SERVO1_CLOSE);  
+    servo2.write(SERVO_OPEN); 
+    delay(15); 
+    digitalWrite(FANIO, HIGH);
+  }
+  else{
+    servo1.write(SERVO1_CLOSE);  
+    servo2.write(SERVO2_CLOSE); 
+    delay(15); 
+    digitalWrite(FANIO, LOW);
+  }
+  
+}
+void voice(u8 volume,u8 n){
+  mp345.setVolume(volume);
+  mp345.play();
+}
+
+//用来测试所有功能。
+void testAllfunctions()
+{
+  servo1.attach(9);
+  servo2.attach(10);
+  xfsSerial.begin(9600);
+  MP3setup();
+  fog(1);
+  delay(500);
+  fog(0);
+  delay(500);
+  fog(1);
+  delay(1000);
+  fog(0);
+  int i;
+  for( i =0;i<=125;i++){
+    light(i,3);
+    delay(100);
+  }
+  voice(40,1);
+  fog(1);
+  smell(3);
+  anion(1);
+  for(;i<=255;i++){
+    light(i,3);
+    delay(100);
+  }
+  delay(1000);
+  XFSplay("[m3]get up");
+  delay(2000);
+  XFSplay("[m3]早上好曹修睿，起床啦!今天有你喜欢的音乐课，记得带好课本。");
+  delay(4000);
+  delay(4000);
+  XFSplay("[m4]上午还有体育课哟，记得带好跳绳。");
+  delay(5000);
+  fog(0);
+  while (1)
+  {
+    if(digitalRead(BUTTON1IO)==0){
+      break;
+    }
+    if(digitalRead(BUTTON2IO)==0){
+      break;
+    }
+  }
+  mp345.restart();
+  light(0,3);
+  smell(0);
+  anion(0);
+  fog(0);
+}
+
+
+
+//=======================================================================
+
+void setup()
+{
+  delay(2000);
+  UI_Serial_initial();  
+  mp345.restart();
+  rtc.init();
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+
+  SetRTC(now.year, now.month, now.day, now.dow, now.hour, now.minute, now.second);
+
+  pinMode(BUTTON1IO, INPUT_PULLUP);
+  pinMode(BUTTON2IO, INPUT_PULLUP);
+  while (1)
+  {
+    u8 cc=0;
+    if(digitalRead(BUTTON1IO)==0)
+    {
+    cc++;break;
+    }
+    if(digitalRead(BUTTON2IO)==0)
+    {
+    cc++;break;
+    }
+    delay(100);
+    if(cc>5)break;
+  }
+  testAllfunctions();
+}
+
+
+
+typedef struct __moshi
+{
+  uint8_t shebei;
+  int16_t shijian;
+  uint8_t dongzuo;
+  uint8_t canshu;
+} MOSHI;
+
+#define MOSHI1_LENTH  10
+MOSHI moshi1[MOSHI1_LENTH];
+
+Ds1302::DateTime alarm;
+
+void loop()
+{ // run over and over
+  static i=0;
+  static Shebei0shuliang =0;
+  //计算当前离闹钟时间  
+  Ds1302::DateTime now;
+  rtc.getDateTime(&now);
+  int16_t shijiancha;
+  shijiancha = .....;
+
+  //判断是否到时间执行
+  if(shijiancha > wakeupMode1[i].shijian )
+  {
+    //开始执行动作
+    switch(wakeupMode1[i].shebei)
+    {
+      case 1: voice(wakeupMode1[i].dongzuo, wakeupMode1[i].canshu);
+        break;
+      case 2: smell(wakeupMode1[i].dongzuo);
+        break;
+      case 3: anion(wakeupMode1[i].dongzuo);
+        break;
+      case 4: fog(wakeupMode1[i].dongzuo);
+        break;
+      case 5: light(wakeupMode1[i].dongzuo, wakeupMode1[i].canshu);
+        break;
+      case 6: XFSplay("这里获取AI语音");
+        break;
+      case 7: 
+        break;
+      case 0: 
+        Shebei0shuliang ++;
+        if(Shebei0shuliang>=MOSHI1_LENTH)
+        {
+          //说明全部执行完了
+          while(1);
+        }
+    }
+
+    //清除这个执行动作
+    wakeupMode1[i].shijian = 100;    
+    wakeupMode1[i].shebei = 0;
+
+  }
+
+  if(i>=MOSHI1_LENTH)
+  {
+    i=0; // 
+    Shebei0shuliang =0;
+  }
+
+  delay(100);
+}
+//=======================================================================
